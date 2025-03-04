@@ -1,0 +1,31 @@
+import boto3
+import os
+import time
+import urllib.request
+
+s3 = boto3.client('s3')
+BUCKET_NAME = 'testbucket-xiyuan-6620-hw2'
+# The REST API endpoint for the plotting lambda should be set as an environment variable
+PLOTTING_API_URL = 'https://quqzvkd4c7.execute-api.us-east-1.amazonaws.com/default/plotLambdaXiyuan6620HW2'
+
+def lambda_handler(event, context):
+    # Create assignment1.txt with initial content
+    s3.put_object(Bucket=BUCKET_NAME, Key='assignment1.txt', Body="Empty Assignment 1")
+    time.sleep(1)
+    # Update assignment1.txt with new content
+    s3.put_object(Bucket=BUCKET_NAME, Key='assignment1.txt', Body="Empty Assignment 2222222222")
+    time.sleep(1)
+    # Delete assignment1.txt
+    s3.delete_object(Bucket=BUCKET_NAME, Key='assignment1.txt')
+    time.sleep(1)
+    # Create assignment2.txt with content "33"
+    s3.put_object(Bucket=BUCKET_NAME, Key='assignment2.txt', Body="33")
+    time.sleep(1)
+    # # Call the plotting lambda via its REST API
+    response = urllib.request.urlopen(PLOTTING_API_URL)
+    response_body = response.read().decode('utf-8')
+    
+    return {
+        'statusCode': 200,
+        'body': f"Driver operations completed. Plotting lambda response: {response_body}"
+    }
