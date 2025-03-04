@@ -1,0 +1,66 @@
+import matplotlib.pyplot as plt
+
+import boto3
+import io
+import time
+from datetime import datetime
+from boto3.dynamodb.conditions import Key
+
+# Initialize AWS clients outside the handler to reuse connections
+dynamodb = boto3.resource('dynamodb')
+table = dynamodb.Table('S3-object-size-history')
+s3 = boto3.client('s3')
+BUCKET_NAME = 'testbucket-xiyuan-6620-hw2'
+
+def lambda_handler(event, context):
+    current_time = int(time.time())
+    start_time = current_time - 10  # Last 10 seconds
+
+    # Query records from DynamoDB for the last 10 seconds
+    response = table.query(
+        KeyConditionExpression=Key('BucketName').eq(BUCKET_NAME) & Key('Timestamp').between(start_time, current_time)
+    )
+    items = response.get('Items', [])
+    
+    # Query the GSI for the maximum size record in descending order
+    response_max = table.query(
+        IndexName='MaxSizeIndex',
+        KeyConditionExpression=Key('BucketName').eq(BUCKET_NAME),
+        ScanIndexForward=False,  # Descending order
+        Limit=1
+    )
+    max_items = response_max.get('Items', [])
+    max_size = int(max_items[0]['TotalSize']) if max_items else 0
+
+    # Sort items by timestamp for plotting
+    items = sorted(items, key=lambda x: x['Timestamp'])
+    
+    # Convert DynamoDB Decimals to integers
+    times = [datetime.fromtimestamp(int(item['Timestamp'])) for item in items]
+    sizes = [int(item['TotalSize']) for item in items]
+    
+    # Create the plot
+    plt.figure(figsize=(10, 5))
+    plt.plot(times, sizes, 'bo-', label='Bucket Size')
+    if times:
+        plt.axhline(y=max_size, color='r', linestyle='--', label='Max Size Ever')
+    plt.xlabel('Time')
+    plt.ylabel('Total Size (bytes)')
+    plt.title(f'Bucket Size for {BUCKET_NAME} in Last 10 Seconds')
+    plt.legend()
+    plt.gcf().autofmt_xdate()
+    plt.tight_layout()
+
+    # Save plot to an in-memory file
+    buf = io.BytesIO()
+    plt.savefig(buf, format='png')
+    buf.seek(0)
+    plt.close()
+
+    # Upload the plot to S3 as an object called "plot"
+    s3.put_object(Bucket=BUCKET_NAME, Key='plot', Body=buf.getvalue(), ContentType='image/png')
+    
+    return {
+        'statusCode': 200,
+        'body': f"Plot created for bucket {BUCKET_NAME} and uploaded as 'plot'."
+    }
