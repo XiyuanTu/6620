@@ -1,0 +1,50 @@
+import boto3
+import os
+import time
+
+s3 = boto3.client('s3')
+dynamodb = boto3.resource('dynamodb')
+TABLE_NAME = os.environ.get('TABLE_NAME', 'S3-object-size-history')
+table = dynamodb.Table(TABLE_NAME)
+
+def handler(event, context):
+    # Extract bucket name from event (assumes event from TestBucket)
+    bucket_name = event['Records'][0]['s3']['bucket']['name']
+    
+    # Compute the total size and count of all objects in the bucket
+    total_size = 0
+    object_count = 0
+    continuation_token = None
+    while True:
+        if continuation_token:
+            response = s3.list_objects_v2(Bucket=bucket_name, ContinuationToken=continuation_token)
+        else:
+            response = s3.list_objects_v2(Bucket=bucket_name)
+        
+        if 'Contents' in response:
+            for obj in response['Contents']:
+                total_size += obj['Size']
+                object_count += 1
+        
+        if response.get('IsTruncated'):
+            continuation_token = response.get('NextContinuationToken')
+        else:
+            break
+
+    timestamp = int(time.time())
+    
+    # Save the bucket size information into the DynamoDB table
+    item = {
+        'BucketName': bucket_name,
+        'Timestamp': timestamp,
+        'TotalSize': total_size,
+        'ObjectCount': object_count
+    }
+    
+    table.put_item(Item=item)
+    
+    return {
+        'statusCode': 200,
+        'body': f"Bucket {bucket_name} size recorded: {total_size} bytes, {object_count} objects at {timestamp}"
+    }
+
